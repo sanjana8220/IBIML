@@ -1,0 +1,94 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
+warnings.filterwarnings('ignore')
+
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, roc_curve
+from xgboost import XGBClassifier
+
+# Load Dataset
+df = pd.read_csv('WA_Fn-UseC_-Telco-Customer-Churn.csv')
+
+# Handle missing values
+df['TotalCharges'] = pd.to_numeric(df['TotalCharges'], errors='coerce')
+df['TotalCharges'].fillna(df['TotalCharges'].median(), inplace=True)
+
+# Drop irrelevant columns
+df.drop(['customerID'], axis=1, inplace=True)
+
+# Encode categorical features
+for col in df.select_dtypes(include='object').columns:
+    if df[col].nunique() == 2:
+        df[col] = LabelEncoder().fit_transform(df[col])
+    else:
+        df = pd.get_dummies(df, columns=[col], drop_first=True)
+
+# Split features and target
+X = df.drop('Churn', axis=1)
+y = df['Churn']
+
+# Feature Scaling
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Train/Test Split
+X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, stratify=y, random_state=42)
+
+# Train XGBoost Model
+model = XGBClassifier(
+    use_label_encoder=False,
+    eval_metric='logloss',
+    n_estimators=100,
+    learning_rate=0.1,
+    max_depth=4,
+    random_state=42
+)
+model.fit(X_train, y_train)
+
+# Predict
+y_pred = model.predict(X_test)
+y_proba = model.predict_proba(X_test)[:, 1]
+
+# Classification Report
+print("Classification Report:\n", classification_report(y_test, y_pred))
+
+# ROC AUC Score
+roc_auc = roc_auc_score(y_test, y_proba)
+print("ROC AUC Score:", roc_auc)
+
+# Confusion Matrix
+cm = confusion_matrix(y_test, y_pred)
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+plt.title('Confusion Matrix')
+plt.xlabel('Predicted')
+plt.ylabel('Actual')
+plt.show()
+
+# ROC Curve
+fpr, tpr, thresholds = roc_curve(y_test, y_proba)
+plt.figure()
+plt.plot(fpr, tpr, label=f'XGBoost (AUC = {roc_auc:.2f})', color='darkorange')
+plt.plot([0, 1], [0, 1], 'k--', lw=2)
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver Operating Characteristic')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Feature Importance Plot
+importances = model.feature_importances_
+indices = np.argsort(importances)[::-1]
+features = X.columns
+
+plt.figure(figsize=(12, 6))
+sns.barplot(x=importances[indices][:10], y=features[indices][:10])
+plt.title('Top 10 Feature Importances (XGBoost)')
+plt.xlabel('Importance')
+plt.ylabel('Feature')
+plt.tight_layout()
+plt.show()
